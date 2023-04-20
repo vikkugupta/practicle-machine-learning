@@ -1,0 +1,162 @@
+---
+title: "Practicle Machine Learning Assingment"
+output: html_document
+date: "2023-04-20"
+---
+
+
+## SYNOPOSIS
+ 
+  the goal of this project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. I will create a report describing how I have built my model, how I have used cross validation, what I think the expected out of sample error is, and why I have made the choices I did. I will also use your prediction model to predict 20 different test cases.
+
+## Data Sources 
+
+The training data for this project are available here:
+  
+  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+  
+  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source:
+  
+  http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+## Loading The Data and Libraries
+
+```{r}
+library(caret)
+library(knitr)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+
+training_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv" 
+testing_url <-  "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(training_url))
+testing <- read.csv(url(testing_url))
+
+dim(training)
+dim(testing)
+```
+
+## Data cleaning 
+
+there are 3 parts in data cleaning 
+
+# A. Removing values which are having nearly Zero Variance .
+
+```{r}
+nearZeroVar <- nearZeroVar(training)
+training <- training[, - nearZeroVar]
+teasting <- testing[ , - nearZeroVar]
+dim(training)
+dim(testing)
+
+```
+
+
+# removing variables which are mostly NA 
+```{r}
+allna <- sapply(training, function(x)mean(is.na(x))) > 0.95
+training <- training[, allna==FALSE]
+testing <- testing[,allna==FALSE]
+dim(training)
+dim(testing)
+```
+
+# Subset data 
+```{r}
+training <- training[, - c(1:7)]
+testing <- testing[, -c(1:7)]
+```
+
+## Data Partitioning / Cross validation
+
+In this section cross-validation will be performed by splitting the training data in training 60% and testing 40% data.
+```{r}
+intrain <- createDataPartition(y = training$classe , p= .6 , list = FALSE )
+subtraining <- training[intrain , ]
+subtesting <- training[ -intrain , ]
+dim(subtraining)
+dim(subtesting)
+
+
+```
+
+## Random forest Model
+
+prediction in term of Random forest Model 
+
+```{r}
+set.seed(111)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+RF_modelfit <- train(classe ~ . , data = subtraining , method = "rf" , trControl = controlRF , ntree = 100)
+RF_modelfit$finalModel
+RF_predict <- predict(RF_modelfit , newdata = subtesting)
+CF_randomforest <- confusionMatrix(RF_predict,  as.factor( subtesting$classe))
+CF_randomforest
+plot(CF_randomforest$table ,col= CF_randomforest$byClass ,  main = paste("Random Forest Accuracy= " , round(CF_randomforest$overall['Accuracy'], 4  )))
+```
+
+
+
+## Decision Tree Model
+
+prediction in term of  Decision tree model 
+
+```{r}
+modfit <- train(classe ~ ., data= subtraining , method = "rpart")
+prediction <- predict(modfit , newdata = subtesting)
+confusionMatrix(prediction , as.factor( subtesting$classe))
+rpart.plot(modfit$finalModel , roundint = F)
+```
+
+
+
+## Generalised Boosted Method 
+prediction in term of General boosted Method
+
+```{r}
+set.seed(112)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+gbm_modfit <- train(classe ~ . , data= subtraining , method = "gbm" ,trControl = controlGBM, verbose = F)
+gbm_modfit$finalmodel
+gbm_prediction <- predict(gbm_modfit , newdata = subtesting)
+conf_gbm_prediction <- confusionMatrix(gbm_prediction ,as.factor( subtesting$classe))
+conf_gbm_prediction
+plot(conf_gbm_prediction$table , col = conf_gbm_prediction$classe , main= paste("GBM - Accuracy" , round(conf_gbm_prediction$overall['Accuracy'],4)))
+```
+
+## Applying selected model on the Test data 
+
+The accuracy of the 2 regression modeling methods above are: Random Forest : 0.9993 GBM : 0.9874 In that case, the Random Forest model will be applied to predict the quiz.
+
+
+
+
+## Conclusion 
+
+The overall performance of rf is superior compared to the other two models, rpart and glmnet, on the
+training and validation dataset. Overall the accuracy of rpart and glmnet is lower than I expected. Performance of the glmnet could be further improved by choosing higher lambda-values. Lower lambda-values
+provoke a warning message that no convergence can be found after the maximum amount of iterations. Both
+models could improve by choosing a better parameter set.
+The performance of all models is is a bit lower on the validation data, but overall near the accuracy of the
+training data implying a low OOS, which is less than 1 % according to the model metrics for rf (0.08%, see:
+Metrics for Random Forest), and rejecting an overfitting of the train data split as seen in the validation data
+prediction accuracy. This low OOS-error is as expected. Though I suspect, given extremly high accuracy
+of the rf model, that this model would perform poorly in a real world setting with other participiants and
+other measuring devices. A problem known for machine learning. This is further described in this paper for
+example.
+This could be avoided by removing predictors that are highly specific to this data set, like the user_name,
+num_window or cvtd_timestamp and aquiring a much bigger data set with more devices and more diverse
+users. cvtd_timestamp seems to have a reasonable high impact on the prediction but has no impact in a
+real world setting (see: Predictor Impact in the Annex).
+Given the near perfect accuracy of the rf model on the validation dataset no further modeling techniques
+like ensemble models or further parameter tuning is performed and this model is choosen for predicting the
+testing data set.
+
+
